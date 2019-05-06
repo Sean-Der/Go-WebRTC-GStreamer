@@ -10,13 +10,13 @@ Additionally, we try to remember the publisher and client so as to reconnect upo
 
 # Usage
 
-1. 
-Ensure `GO111MODULE=on` in your terminal.
+1. Download the code using `go get github.com/Adaickalavan/Go-WebRTC-GStreamer`
+1. Ensure `GO111MODULE=on` in your terminal.
 1. To run locally:
-    + Run `go install`.
+    + Run `go install` in the project folder.
     + Then run the executable, i.e., `webrtc`.
 1. To run the code in Docker, do the following:
-    + Run `docker build -t webrtc .` in the webrtc folder.
-    + Then run `docker-compose up` to     
+    + Run `docker build -t webrtc .` in the project folder.
+    + Then run `docker-compose up`.
 1. Go to `localhost:8088/publish` web page which will start capturing video using your webcam. This video will be broadcast to multiple clients.
 1. Then open another tab in your browser, and go to `localhost:8088/join` to see the broadcasted video. 
