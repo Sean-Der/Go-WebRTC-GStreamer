@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  webrtc:
+    image: webrtc
+    # build: .
+    container_name: webrtc 
+    restart: always 
+    ports:
+      - 8088:8088
+    environment:
+      - LISTENINGADDR=8088
+    # networks:
+    #   - zookeeper_dockerNet 
+      
+# networks:
+#   zookeeper_dockerNet:
+#     external: true #Label the other docker-compose network as an external network to the current docker-compose file
+    

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>WebRTC Video Analytics Broadcast</title>
+</head>
+
+<body>
+  <div id="signalingContainer">
+    <!-- Browser base64 Session Description<br />
+    <textarea id="localSessionDescription" rows="5" cols="50" readonly="true"></textarea> <br /> -->
+
+    Final browser base64 Session Description<br />
+    <textarea id="finalLocalSessionDescription" rows="10" cols="50" readonly="true"></textarea> <br />
+
+    Golang base64 Session Description<br />
+    <textarea id="remoteSessionDescription" rows="10" cols="50" readonly="true"></textarea> <br/>
+  </div>
+
+  <br />
+
+  Video<br />
+  <video id="video1" width="320" height="240" autoplay muted></video> <br />
+
+  <br />
+
+  Logs<br />
+  <div id="logs"></div>
+
+  <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+  <script src="./static/js/connect.js"></script>  
+  <script language="javascript">
+    publish();
+  </script>
+
+</body>
+
+</html>
