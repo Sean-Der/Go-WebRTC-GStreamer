@@ -13,7 +13,7 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/adaickalavan/Go-Incubate/Deployment-WebRTC/webrtc/handler"
+	"github.com/adaickalavan/Go-WebRTC-GStreamer/handler"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v2"

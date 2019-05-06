@@ -14,7 +14,7 @@ Additionally, we try to remember the publisher and client so as to reconnect upo
 1. Ensure `GO111MODULE=on` in your terminal.
 1. To run locally:
     + Run `go install` in the project folder.
-    + Then run the executable, i.e., `webrtc`.
+    + Then run the executable, i.e., `Go-WebRTC-GStreamer`.
 1. To run the code in Docker, do the following:
     + Run `docker build -t webrtc .` in the project folder.
     + Then run `docker-compose up`.
