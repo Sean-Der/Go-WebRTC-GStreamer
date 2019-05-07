@@ -1,4 +1,4 @@
-module github.com/adaickalavan/Go-WebRTC-GStreamer
+module github.com/Adaickalavan/Go-WebRTC-GStreamer
 
 go 1.12
 
