@@ -10,7 +10,7 @@ Additionally, we try to remember the publisher and client so as to reconnect upo
 
 # Usage
 
-1. Download the code using `go get github.com/Adaickalavan/Go-WebRTC-GStreamer`
+1. Download the code using `git clone https://github.com/Adaickalavan/Go-WebRTC-GStreamer.git`
 1. Ensure `GO111MODULE=on` in your terminal.
 1. To run locally:
     + Run `go install` in the project folder.
