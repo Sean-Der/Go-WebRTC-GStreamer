@@ -1,11 +1,11 @@
 package main
 
 import (
-	"math/rand"
 	"encoding/json"
 	"html/template"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
@@ -16,7 +16,9 @@ import (
 	"github.com/Adaickalavan/Go-WebRTC-GStreamer/handler"
 
 	"github.com/pion/rtcp"
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v2"
+	"github.com/pion/webrtc/v2/pkg/media/samplebuilder"
 )
 
 var peerConnectionConfig = webrtc.Configuration{
@@ -28,7 +30,9 @@ var peerConnectionConfig = webrtc.Configuration{
 }
 
 const (
-	rtcpPLIInterval = time.Second * 3
+	rtcpPLIInterval = time.Second
+	// mode for frames width per timestamp from a 30 second capture
+	rtpAverageFrameWidth = 7
 )
 
 func init() {
@@ -46,35 +50,33 @@ func main() {
 
 	// Setup the codecs you want to use.
 	// Only support VP8, this makes our proxying code simpler
-	m.RegisterCodec(webrtc.NewRTPVP8Codec(webrtc.DefaultPayloadTypeVP8, 90000))
+	codec := webrtc.NewRTPVP8Codec(webrtc.DefaultPayloadTypeVP8, 90000)
+	m.RegisterCodec(codec)
 
 	// Create the API object with the MediaEngine
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
 
-	// Run SDP server
-	s := newSDPServer(api)
-	s.run(os.Getenv("LISTENINGADDR"))
-}
+	track, err := webrtc.NewTrack(webrtc.DefaultPayloadTypeVP8, rand.Uint32(), "pion", "video", codec)
+	if err != nil {
+		panic(err)
+	}
 
-type pcinfo struct {
-	pc    *webrtc.PeerConnection
-	track *webrtc.Track
-	ssrc uint32
+	// Run SDP server
+	s := newSDPServer(api, track)
+	s.run(os.Getenv("LISTENINGADDR"))
 }
 
 type sdpServer struct {
 	recoverCount int
 	api          *webrtc.API
-	pcUpload     map[string]*pcinfo
-	pcDownload   map[string]*webrtc.PeerConnection
+	track        *webrtc.Track
 	mux          *http.ServeMux
 }
 
-func newSDPServer(api *webrtc.API) *sdpServer {
+func newSDPServer(api *webrtc.API, track *webrtc.Track) *sdpServer {
 	return &sdpServer{
-		api:        api,
-		pcUpload:   make(map[string]*pcinfo),
-		pcDownload: make(map[string]*webrtc.PeerConnection),
+		api:   api,
+		track: track,
 	}
 }
 
@@ -144,53 +146,19 @@ func handlerSDP(s *sdpServer) http.HandlerFunc {
 				panic(err)
 			}
 
-			// Store the pc handle
-			var localTrack = &webrtc.Track{}
-			var err error
-			var ssrcLocal uint32
-			if k, ok := s.pcUpload[offer.Name]; !ok {
-				ssrcLocal = rand.Uint32()   
-				localTrack, err = pc.NewTrack(webrtc.DefaultPayloadTypeVP8, ssrcLocal, "video", "pion")
-				if err != nil {
-					log.Panic(err)
-				}
-				s.pcUpload[offer.Name] = &pcinfo{pc: pc, track: localTrack, ssrc: ssrcLocal}
-				log.Println("new publisher")
-			} else {
-				localTrack = k.track
-				ssrcLocal = k.ssrc
-				log.Println("old publisher")
-			}
 			// Set a handler for when a new remote track starts
 			// Add the incoming track to the list of tracks maintained in the server
-			addOnTrack(pc, localTrack, ssrcLocal)
+			addOnTrack(pc, s.track)
 
 			log.Println("Publisher")
-			log.Println(s.pcUpload)
-			log.Println(s.pcDownload)
-
 		case "Client":
-			if len(s.pcUpload) == 0 {
-				handler.RespondWithError(w, http.StatusInternalServerError, "No local track available for peer connection")
+			_, err = pc.AddTrack(s.track)
+			if err != nil {
+				handler.RespondWithError(w, http.StatusInternalServerError, "Unable to add local track to peer connection")
 				return
 			}
 
-			// Store the pc handle
-			s.pcDownload[offer.Name] = pc
-
-			for _, v := range s.pcUpload {
-				_, err = pc.AddTrack(v.track)
-				if err != nil {
-					handler.RespondWithError(w, http.StatusInternalServerError, "Unable to add local track to peer connection")
-					return
-				}
-				break
-			}
-
 			log.Println("Client")
-			log.Println(s.pcUpload)
-			log.Println(s.pcDownload)
-
 		default:
 			handler.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
 			return
@@ -222,7 +190,7 @@ func handlerSDP(s *sdpServer) http.HandlerFunc {
 	}
 }
 
-func addOnTrack(pc *webrtc.PeerConnection, localTrack *webrtc.Track, ssrcRemote uint32) {
+func addOnTrack(pc *webrtc.PeerConnection, localTrack *webrtc.Track) {
 	// Set a handler for when a new remote track starts, this just distributes all our packets
 	// to connected peers
 	pc.OnTrack(func(remoteTrack *webrtc.Track, receiver *webrtc.RTPReceiver) {
@@ -231,46 +199,35 @@ func addOnTrack(pc *webrtc.PeerConnection, localTrack *webrtc.Track, ssrcRemote 
 		go func() {
 			ticker := time.NewTicker(rtcpPLIInterval)
 			for range ticker.C {
-				if rtcpSendErr := pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: remoteTrack.SSRC()}}); rtcpSendErr != nil {
+				rtcpSendErr := pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: remoteTrack.SSRC()}})
+				if rtcpSendErr != nil {
+					if rtcpSendErr == io.ErrClosedPipe {
+						return
+					}
+
 					log.Println(rtcpSendErr)
 				}
 			}
 		}()
 
-		// Create a local track, all our SFU clients will be fed via this track
-		// var newTrackErr error
-		// localTrackNew, newTrackErr := pc.NewTrack(remoteTrack.PayloadType(), ssrcRemote, "video", "pion")
-		// if newTrackErr != nil {
-		// 	panic(newTrackErr)
-		// }
-		// log.Println(remoteTrack.PayloadType())
-		// log.Println(webrtc.DefaultPayloadTypeVP8)
-		// *localTrack = *localTrackNew
-
-		// rtpBuf := make([]byte, 1400)
-		// for {
-		// 	i, readErr := remoteTrack.Read(rtpBuf)
-		// 	if readErr != nil {
-		// 		panic(readErr)
-		// 	}
-
-		// 	// ErrClosedPipe means we don't have any subscribers, this is ok if no peers have connected yet
-		// 	if _, err := localTrack.Write(rtpBuf[:i]); err != nil && err != io.ErrClosedPipe {
-		// 		panic(err)
-		// 	}
-		// }
-		
 		log.Println("Track acquired", remoteTrack.Kind(), remoteTrack.Codec())
+
+		builder := samplebuilder.New(rtpAverageFrameWidth*5, &codecs.VP8Packet{})
 		for {
 			rtp, err := remoteTrack.ReadRTP()
 			if err != nil {
+				if err == io.EOF {
+					return
+				}
+
 				log.Panic(err)
 			}
-			rtp.SSRC = ssrcRemote
-			rtp.PayloadType = webrtc.DefaultPayloadTypeVP8
 
-			if err := localTrack.WriteRTP(rtp); err != nil && err != io.ErrClosedPipe {
-				log.Panic(err)
+			builder.Push(rtp)
+			for s := builder.Pop(); s != nil; s = builder.Pop() {
+				if err := localTrack.WriteSample(*s); err != nil && err != io.ErrClosedPipe {
+					log.Panic(err)
+				}
 			}
 		}
 	})
